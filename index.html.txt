@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>智能伤口敷料检测平台</title>
+    <style>
+        body { font-family: sans-serif; text-align: center; padding: 20px; }
+        #preview { max-width: 100%; height: auto; margin-top: 10px; border: 1px solid #ccc; }
+        .result-box { margin-top: 20px; padding: 15px; border-radius: 8px; font-weight: bold; }
+        .safe { background-color: #d4edda; color: #155724; }
+        .danger { background-color: #f8d7da; color: #721c24; }
+        button { padding: 10px 20px; font-size: 16px; margin: 10px; cursor: pointer; }
+    </style>
+</head>
+<body>
+
+    <h2>伤口敷料颜色分析 (IoT模拟)</h2>
+    
+    <input type="file" id="imageInput" accept="image/*">
+    <br>
+    <img id="preview" src="" alt="Image preview" style="display:none;">
+    
+    <div style="margin-top:10px;">
+        <button onclick="analyzeInfection()">检测感染 (R/G比)</button>
+        <button onclick="analyzeResistance()">检测耐药性 (Hue)</button>
+    </div>
+
+    <div id="resultOutput" class="result-box" style="display:none;"></div>
+
+    <script>
+        let uploadedImage = new Image();
+        const input = document.getElementById('imageInput');
+        const preview = document.getElementById('preview');
+
+        // 当用户选择图片时显示出来
+        input.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = function(event) {
+                    preview.src = event.target.result;
+                    preview.style.display = 'block';
+                    uploadedImage.src = event.target.result;
+                }
+                reader.readAsDataURL(file);
+            }
+        });
+
+        // 获取图片中心区域的平均颜色 (模拟取样)
+        function getAverageColor(imgElement) {
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            canvas.width = imgElement.width;
+            canvas.height = imgElement.height;
+            ctx.drawImage(imgElement, 0, 0);
+
+            // 取图片中心 50x50 像素的区域进行分析
+            const centerX = Math.floor(canvas.width / 2);
+            const centerY = Math.floor(canvas.height / 2);
+            // 简单起见，这里只取中心的一个像素点作为代表
+            // 实际应用中会计算中心区域的平均值
+            const pixel = ctx.getImageData(centerX, centerY, 1, 1).data;
+            
+            return { r: pixel[0], g: pixel[1], b: pixel[2] };
+        }
+
+        // --- 算法1: 感染检测 (基于论文中的 R/G 比值) ---
+        function analyzeInfection() {
+            if (!uploadedImage.src) return alert("请先上传图片");
+            
+            const rgb = getAverageColor(uploadedImage);
+            // 论文核心公式：计算 R/G 比值 [cite: 645]
+            // 注意：防止除以0
+            const gValue = rgb.g === 0 ? 1 : rgb.g; 
+            const rgRatio = rgb.r / gValue;
+
+            let text = `R: ${rgb.r}, G: ${rgb.g} => R/G比值: ${rgRatio.toFixed(2)}`;
+            let isInfected = false;
+
+            // 论文阈值：1.5 [cite: 646]
+            if (rgRatio >= 1.5) {
+                text += "<br>判定: 阳性 (存在感染)";
+                isInfected = true;
+            } else {
+                text += "<br>判定: 阴性 (未感染)";
+            }
+
+            showResult(text, isInfected);
+        }
+
+        // --- 算法2: 耐药性检测 (基于论文中的 Hue 色相角) ---
+        function analyzeResistance() {
+            if (!uploadedImage.src) return alert("请先上传图片");
+
+            const rgb = getAverageColor(uploadedImage);
+            const hue = rgbToHue(rgb.r, rgb.g, rgb.b);
+
+            let text = `Hue角度: ${hue.toFixed(1)}°`;
+            let isResistant = false;
+
+            // 论文阈值判定 [cite: 760]
+            if (hue > 35) {
+                text += "<br>判定: 阴性 (无耐药性)";
+            } else if (hue >= 25 && hue <= 35) {
+                text += "<br>判定: 中度阳性 (可能耐药)";
+                isResistant = true;
+            } else { // < 25
+                text += "<br>判定: 高度阳性 (耐药严重)";
+                isResistant = true;
+            }
+
+            showResult(text, isResistant);
+        }
+
+        // RGB 转 Hue 的数学公式
+        function rgbToHue(r, g, b) {
+            r /= 255; g /= 255; b /= 255;
+            const max = Math.max(r, g, b), min = Math.min(r, g, b);
+            let h;
+
+            if (max === min) {
+                h = 0; // achromatic
+            } else {
+                const d = max - min;
+                switch (max) {
+                    case r: h = (g - b) / d + (g < b ? 6 : 0); break;
+                    case g: h = (b - r) / d + 2; break;
+                    case b: h = (r - g) / d + 4; break;
+                }
+                h /= 6;
+            }
+            return h * 360;
+        }
+
+        function showResult(htmlContent, isBad) {
+            const div = document.getElementById('resultOutput');
+            div.style.display = 'block';
+            div.innerHTML = htmlContent;
+            div.className = "result-box " + (isBad ? "danger" : "safe");
+        }
+    </script>
+</body>
+</html>
